@@ -1,5 +1,6 @@
 import argparse
 import random
+from tensorflow.keras.preprocessing import image
 from tqdm import tqdm
 import numpy as np
 import torch
@@ -47,6 +48,44 @@ parser.add_argument("--vgg_layer", default=12,
 
 args, other = parser.parse_known_args()
 
+def result_get():
+    synthesizer = StyleGANGenerator(args.model_type).model.synthesis
+    latent_optimizer = LatentOptimizer(synthesizer, args.vgg_layer)
+    image_to_latent = ImageToLatent().cuda()
+    FeatureMapper = FeatureMapping().cuda()
+    FeatureMapper.load_state_dict(torch.load('./output/models/FeatureMapper_90.pth'))
+    image_to_latent.load_state_dict(torch.load('output/models/ImageToLatent_90.pth'))
+    X_train=np.zeros((2,256,256,3))
+    img1 = image.load_img('./data/train/tfaces/0020_01.png', target_size=(256, 256))
+    img2 = image.load_img('./data/train/tfaces/0022_01.png', target_size=(256, 256))
+    img1 = image.img_to_array(img1) / 255.0
+    img2 = image.img_to_array(img2) / 255.0
+    X_train[0] = img1
+    X_train[1] = img2
+    device = torch.device('cuda')
+    smile = np.array((np.load(
+        './InterFaceGAN/boundaries/stylegan_ffhq_smile_w_boundary.npy')))
+    smile_w = torch.from_numpy(np.tile(np.concatenate(
+        (np.tile(smile, (9, 1)), np.zeros((9, 512))), axis=0), (2, 1, 1))).cuda()
+    batchimg = X_train.astype(np.float16)
+    reference_image = torch.from_numpy(batchimg).float().to(device)
+    reference_image = reference_image.permute(0, 3, 1, 2)
+    latents_optimized = image_to_latent(reference_image)
+    latents_to_be_optimized = latents_optimized.view(-1, 18 * 512)
+    latents_to_be_optimized = FeatureMapper(latents_to_be_optimized)
+    latents_to_be_optimized = latents_to_be_optimized.view(-1, 18, 512)
+    latents_to_be_optimized = latents_to_be_optimized.cuda().requires_grad_(True)
+    l1 = latents_to_be_optimized.clone()
+    for j in range(300):
+        lx=l1.clone()
+        lx+=smile_w/100*j
+        gen=latent_optimizer(lx,batchimg)
+        for i in range(2):
+            image_dir = args.optimized_image_path + \
+                        "video_" + str(i) +"_ra_"+str(j)+".jpg"
+            save_img = gen[i].detach().cpu().numpy()
+            save_image(save_img, image_dir)
+    # Using for Presentation
 
 def optimize_latents():
     # logger
@@ -76,83 +115,23 @@ def optimize_latents():
     # best 110
     # try below 100
     image_to_latent.load_state_dict(torch.load('output/models/ImageToLatent_90.pth'))
-    #for param in image_to_latent.parameters():  # frozen the parameters
-     #   param.requires_grad_(False)
+    # for param in image_to_latent.parameters():  # frozen the parameters
+    #   param.requires_grad_(False)
     # You can use models from scatch
 
     #image_to_latent.train() # training for the first step
     FeatureMapper.train()# The feature mapping step
     X_train,Y_train=DataSet()
-    import numpy as np
-    #X_train=np.ones((32,256,256))
-    #Y_train=np.ones((32,18,512))
-    print("data loaded!")
     criterion = torch.nn.MSELoss()
     optimizer = torch.optim.Adam(
         image_to_latent.parameters(), lr=args.learning_rate)
-
     save_dir = os.path.join(args.output_dir, 'models')
     os.makedirs(save_dir, exist_ok=True)
-
     device = torch.device('cuda')
     imgprocess = ImageProcessing().cuda().eval()
     imgpostprocess = PostSynthesisProcessing().cuda().eval()
     sum_loss = 0
-    batch_size=2
-    index = [i for i in range(len(X_train))]
-    smile = np.array((np.load(
-        './InterFaceGAN/boundaries/stylegan_ffhq_gender_w_boundary.npy')))
-    smile_w = torch.from_numpy(np.tile(np.concatenate(
-        (np.tile(smile, (5, 1)), np.zeros((13, 512))), axis=0), (batch_size, 1, 1))).cuda()
-    batchimg = X_train[index[:2]].astype(np.float16)
-    batchlats = Y_train[index[:2]].astype(np.float16)
-    reference_image = torch.from_numpy(batchimg).float().to(device)
-    reference_image = reference_image.permute(0, 3, 1, 2)
-    generated_features = torch.from_numpy(batchlats).float().to(device)
-    latents_optimized = image_to_latent(reference_image)
-    # On first step , this do not use
-    latents_to_be_optimized = latents_optimized.view(-1, 18 * 512)
-    latents_to_be_optimized = FeatureMapper(latents_to_be_optimized)
-    latents_to_be_optimized = latents_to_be_optimized.view(-1, 18, 512)
-    latents_to_be_optimized = latents_to_be_optimized.cuda().requires_grad_(True)
-    generated_imgs_ori = latent_optimizer(latents_to_be_optimized, batchimg)
-    l1=latents_to_be_optimized.clone()
-    l1+=smile_w
-    gen_smile1=latent_optimizer(l1,batchimg)
-    l1+=smile_w*0.5
-    gen_smile2=latent_optimizer(l1,batchimg)
-    l1+=smile_w*3
-    gen_smile3 = latent_optimizer(l1, batchimg)
-    for i in range(2):
-        image_dir = args.optimized_image_path + \
-                    "origin_" + str(i) + ".jpg"
-        save_img = reference_image[i].detach().cpu().numpy()*255
-        save_image(save_img, image_dir)
-        image_dir = args.optimized_image_path + \
-                    "gen_" + str(i) + ".jpg"
-        save_img = generated_imgs_ori[i].detach().cpu().numpy()
-        save_image(save_img, image_dir)
-        image_dir = args.optimized_image_path + \
-                    "smile1_" + str(i) + ".jpg"
-        save_img = gen_smile1[0].detach().cpu().numpy()
-        save_image(save_img, image_dir)
-        image_dir = args.optimized_image_path + \
-                    "smile2_" + str(i) + ".jpg"
-        save_img = gen_smile2[i].detach().cpu().numpy()
-        save_image(save_img, image_dir)
-        image_dir = args.optimized_image_path + \
-                    "smile3_" + str(i) + ".jpg"
-        save_img = gen_smile3[i].detach().cpu().numpy()
-        save_image(save_img, image_dir)
-
-    '''
-        latents_to_be_optimized+=3*smile_w
-        generated_imgs = latent_optimizer(latents_to_be_optimized, batchimg)
-        nimgs = latent_optimizer(generated_features,batchimg)
-        image_dir = args.optimized_image_path + \
-                    "smile_" +str(epoch)+".jpg"
-        save_img = generated_imgs[0].detach().cpu().numpy()
-        save_image(save_img, image_dir)
+    batch_size=8
     for epoch in range(1, args.epochs + 1):
         # logger.info("Epoch: [%d]" % epoch)
         index = [i for i in range(len(X_train))]
@@ -163,9 +142,8 @@ def optimize_latents():
         ite=int(len(X_train)/batch_size)
         for i in range(ite):
             batchx=index[i*batch_size:i*batch_size+batch_size]
-            #batchy=Y_train[i*batch_size:i*batch_size+batch_size]
+            batchy=Y_train[i*batch_size:i*batch_size+batch_size]
             index_b.append(batchx)
-            #Y_b.append(batchy)
         for (i, batchind) in enumerate(index_b,1):
             batchimg=X_train[batchind].astype(np.float16)
             batchlats=Y_train[batchind].astype(np.float16)
@@ -174,25 +152,16 @@ def optimize_latents():
             generated_features=torch.from_numpy(batchlats).float().to(device)
             latents_optimized = image_to_latent(reference_image)
             # On first step , this do not use
-
             latents_to_be_optimized = latents_optimized.view(-1,18*512)
             latents_to_be_optimized = FeatureMapper(latents_to_be_optimized)
             latents_to_be_optimized = latents_to_be_optimized.view(-1, 18,512)
             latents_to_be_optimized = latents_to_be_optimized.cuda().requires_grad_(True)
             generated_imgs = latent_optimizer(latents_to_be_optimized, batchimg)
             nimgs = latent_optimizer(generated_features, batchimg)
-            
-            latents_to_be_optimized+=3*smile_w
-            generated_imgs = latent_optimizer(latents_to_be_optimized, batchimg)
-            nimgs = latent_optimizer(generated_features,batchimg)
-            image_dir = args.optimized_image_path + \
-                        "smile_" +str(epoch)+".jpg"
-            save_img = generated_imgs[0].detach().cpu().numpy()
-            save_image(save_img, image_dir)
-            
             gen_feat = latent_optimizer.vgg16(imgprocess(generated_imgs))
             n_feat=latent_optimizer.vgg16(imgprocess(nimgs))
             # until here , for the second step (Mapping)
+            # loss=criterion(latents_to_be_optimized,generated_features)
             loss = criterion(gen_feat,n_feat)+criterion(generated_imgs,nimgs) # second loss for second step
             optimizer.zero_grad()
             loss.backward()
@@ -225,19 +194,15 @@ def optimize_latents():
         images_to_video(generated_image_hook.get_images(), args.video_path)
     if args.save_optimized_image:
         save_image(generated_image_hook.last_image, args.optimized_image_path)
-    '''
 def main():
-    # assert(validate_path(args.image_path, "r"))
-    # assert(validate_path(args.dlatent_path, "w"))  # is validate path?
-    # vgg layer number must be in valid range
     assert(1 <= args.vgg_layer <= 16)
     if args.video:
         assert(validate_path(args.video_path, "w"))  # whether transf to video
     if args.save_optimized_image:
         # whether save the image optimized
         assert(validate_path(args.optimized_image_path, "w"))
-    optimize_latents()
-
+    #optimize_latents()
+    result_get()
 
 if __name__ == "__main__":
     main()
