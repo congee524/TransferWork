@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PublishConfigData" autoUpload="Always" serverName="mym@210.28.133.13:20146">
+    <serverData>
+      <paths name="mym@210.28.133.13:20146">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/home/mym/GoogleML" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+    </serverData>
+    <option name="myAutoUpload" value="ALWAYS" />
+  </component>
+</project>

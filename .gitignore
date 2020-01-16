@@ -1,0 +1,13 @@
+__pycache__
+.pt
+.npy
+.ipynb_checkpoints
+image_to_latent.pt
+dlatents.npy
+notes.txt
+StyleTransfer
+pretrained_model
+output
+data
+ImageToLatent_80.pth
+ImageToLatent_110.pth
