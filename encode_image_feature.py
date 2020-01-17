@@ -56,8 +56,11 @@ def result_get():
     FeatureMapper.load_state_dict(torch.load('./output/models/FeatureMapper_90.pth'))
     image_to_latent.load_state_dict(torch.load('output/models/ImageToLatent_90.pth'))
     X_train=np.zeros((2,256,256,3))
-    img1 = image.load_img('./data/train/tfaces/0020_01.png', target_size=(256, 256))
-    img2 = image.load_img('./data/train/tfaces/0022_01.png', target_size=(256, 256))
+    #img1 = image.load_img('./data/train/tfaces/0020_01.png', target_size=(256, 256))
+    #img2 = image.load_img('./data/train/tfaces/0022_01.png', target_size=(256, 256))
+    img1 = image.load_img('./data/sy_imgs/example0.png', target_size=(256, 256))
+    img2 = image.load_img('./data/sy_imgs/example14.png', target_size=(256, 256))
+
     img1 = image.img_to_array(img1) / 255.0
     img2 = image.img_to_array(img2) / 255.0
     X_train[0] = img1
@@ -76,9 +79,9 @@ def result_get():
     latents_to_be_optimized = latents_to_be_optimized.view(-1, 18, 512)
     latents_to_be_optimized = latents_to_be_optimized.cuda().requires_grad_(True)
     l1 = latents_to_be_optimized.clone()
-    for j in range(300):
+    for j in range(30):
         lx=l1.clone()
-        lx+=smile_w/100*j
+        lx+=smile_w/10*j
         gen=latent_optimizer(lx,batchimg)
         for i in range(2):
             image_dir = args.optimized_image_path + \
